@@ -1,0 +1,12 @@
+Assembly de novo
+
+FASTQC: Análise da qualidade dos dados brutos
+SPAdes: Montagem de novo das amostras disponibilizadas
+Blastn: Em um banco de dados de vírus para identificação (ncbi)
+
+Referencia da amostra 01: NC_045512.2
+Referencia da amostra 02 e 03: MK213795.1
+
+Na amostra 01 temos SARS-CoV-2, por se tratar desse vírus, utilizamos o Nextclade (https://clades.nextstrain.org/) para determinação da Linhagem Gamma: P1.1. Entretanto, as amostras 2 e 3 não alinharam bem.
+Dessa forma, fez-se uma nova consulta no NCBI para então determina-lás, ao realizar um megablast, observou-se que se trata de Escherichia phage MS2 (NCBI:txid12022), com identidade de 100%. 
+

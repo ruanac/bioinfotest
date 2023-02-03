@@ -1,0 +1,82 @@
+# O processo de sequenciamento de DNA via tecnologia Illumina requer a adição de alguns adaptadores às sequências. 
+# Estes também são sequenciados e precisam ser removidos, pois são artificiais e não pertencem à espécie que tentamos sequenciar. 
+# De um modo geral, temos que lidar com uma compensação entre a precisão da remoção do adaptador e a velocidade do processo.
+
+fastp --detect_adapter_for_pe --overrepresentation_analysis --correction  --cut_right --html --thread 2 -i data/510-7-BRCA_S8_L001_R1_001.fastq.gz -I data/510-7-BRCA_S8_L001_R2_001.fastq.gz
+
+mkdir trimmed-fastqc #Criar diretório
+
+fastqc -o trimmed-fastqc trimmed/*.fastq.gz #Organizando dados
+
+multiqc trimmed-fastqc trimmed #Organizando dados
+
+(*navegador de interesse*) multiqc_report.html #Abrindo relatório
+
+#Criando um arquivo com R1 e R2 para obter o relatório de contigs 
+
+spades.py -o dna-seq/ --careful -1 data/510-7-BRCA_S8_L001_R1_001.fastq.gz -2 data/510-7-BRCA_S8_L001_R2_001.fastq.gz
+
+#Utilizou-se o Quast para interpretar os dados do passo anterior e obter quantitativo de contigs
+
+/home/ruana/Documentos/quast-5.2.0/quast.py -o dna-seq/quast dna-seq/spades/scaffolds.fasta data/hg19.fasta
+
+#indexação BWA
+
+bwa index data/hg19.fasta
+
+#Mapeamento BWA
+
+bwa mem data/hg19.fasta data/510-7-BRCA_S8_L001_R1_001.fastq.gz data/510-7-BRCA_S8_L001_R2_001.fastq.gz > dna-seq/mappings/seq.sam
+
+#Pós-processamento de mapeamento:
+
+#fixmate and compress to bam
+samtools sort -n -O sam dna-seq/mappings/seq.sam | samtools fixmate -m -O bam - dna-seq/mappings/seq.fixmate.bam 
+rm dna-seq/mappings/seq.sam
+
+#sort
+samtools sort -O bam -o dna-seq/mappings/seq.sorted.bam dna-seq/mappings/seq.fixmate.bam
+rm dna-seq/mappings/seq.fixmate.bam
+
+#mark duplicates
+samtools markdup -r -S dna-seq/mappings/seq.sorted.bam dna-seq/mappings/seq.sorted.dedup.bam
+rm dna-seq/mappings/seq.sorted.bam
+
+#extract q20 (qualidade >20) mappers
+samtools view -h -b -q 20 dna-seq/mappings/seq.sorted.dedup.bam > dna-seq/mappings/seq.sorted.dedup.q20.bam
+
+#extract unmapped
+samtools view -b -f 4 dna-seq/mappings/seq.sorted.dedup.bam > dna-seq/mappings/seq.sorted.unmapped.bam
+rm dna-seq/mappings/seq.sorted.dedup.bam
+
+#covert to fastq
+samtools fastq -1 dna-seq/mappings/seq.sorted.unmapped.R1.fastq.gz -2 dna-seq/mappings/seq.sorted.unmapped.R2.fastq.gz dna-seq/mappings/seq.sorted.unmapped.bam
+
+#Instalação do qualimap v.2.2.1 para visualização do arquivo bam e fitrar uma região de interesse ou todas, por exemplo: 
+
+samtools view -b dna-seq/mappings/seq.sorted.dedup.q20.bam chr17:41197694-41197819 > seq.chr17.bam #o chr17:41197694-41197819 é a região de interesse aqui 
+
+#Chamada de variantes:
+
+#index mappings
+bamtools index -in dna-seq/mappings/seq.sorted.dedup.q20.bam
+
+#calling variants *Essa parte pode ser feita, chamando as variantes do genoma todo, apenas uma região de interesse, ou cromossomo alvo, por exemplo:
+freebayes -f data/hg19.fasta -r chr13:32890433-32973045 dna-seq/mappings/seq.sorted.dedup.q20.bam > variants/results.chr13.freebayes.vcf
+freebayes -f data/hg19.fasta -r chr17:41197559-41276257 dna-seq/mappings/seq.sorted.dedup.q20.bam > variants/results.chr17.freebayes.vcf
+
+#compress *para ser utilizados no rtg
+bgzip variants/results.chr13.freebayes.vcf
+bgzip variants/results.chr17.freebayes.vcf
+
+#estatística dos dados através do rtg
+rtg vcfstats variants/results.chr13.freebayes.vcf.gz
+rtg vcfstats variants/results.chr17.freebayes.vcf.gz
+
+#functional annotation of variants (download snpEff)
+
+java -jar snpEff.jar download -v hg19
+
+
+
+
